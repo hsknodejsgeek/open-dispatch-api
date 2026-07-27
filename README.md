@@ -1,23 +1,18 @@
-# Getting Started with [Fastify-CLI](https://www.npmjs.com/package/fastify-cli)
-This project was bootstrapped with Fastify-CLI.
+# LogiPulse
 
-## Available Scripts
+High-throughput fleet dispatch API — Fastify backend + OpenTofu-provisioned AWS infrastructure. Built as a portfolio demo project.
 
-In the project directory, you can run:
+## Repo layout
 
-### `npm run dev`
+```
+logipulse/
+├── server/    # Fastify backend (see server/README.md)
+├── infra/     # OpenTofu IaC (AWS VPC, ECS Fargate, RDS, ALB)
+└── docs/      # Architecture notes and implementation plan
+```
 
-To start the app in dev mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+See `docs/intro.md` for the full spec and `docs/implementation-plan.md` for the phased build plan.
 
-### `npm start`
+## Status
 
-For production mode
-
-### `npm run test`
-
-Run the test cases.
-
-## Learn More
-
-To learn Fastify, check out the [Fastify documentation](https://fastify.dev/docs/latest/).
+Work in progress — see `docs/implementation-plan.md` for current phase.
