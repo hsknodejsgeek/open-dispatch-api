@@ -2,6 +2,21 @@
 
 const MAX_TRACKING_NUMBER_ATTEMPTS = 5
 
+// Allowed forward transitions. PENDING can move to IN_TRANSIT or be
+// CANCELLED; IN_TRANSIT can move to DELIVERED or be CANCELLED; DELIVERED
+// and CANCELLED are terminal states with no further transitions.
+const VALID_STATUS_TRANSITIONS = {
+  PENDING: ['IN_TRANSIT', 'CANCELLED'],
+  IN_TRANSIT: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: [],
+  CANCELLED: []
+}
+
+function isValidStatusTransition (from, to) {
+  if (from === to) return false
+  return (VALID_STATUS_TRANSITIONS[from] || []).includes(to)
+}
+
 function randomTrackingNumber () {
   const digits = Math.floor(1000 + Math.random() * 9000) // 4-digit, 1000-9999
   return `TRK-${digits}`
@@ -97,9 +112,44 @@ async function createDelivery (fastify, request, reply) {
   return serializeDelivery(delivery)
 }
 
+/**
+ * PATCH /v1/deliveries/:id/status — transitions a delivery to a new status,
+ * validating the transition against VALID_STATUS_TRANSITIONS.
+ *
+ * Returns 404 if the delivery doesn't exist, 409 if the transition isn't
+ * allowed from the delivery's current status.
+ *
+ * @param {import('fastify').FastifyInstance} fastify
+ * @param {import('fastify').FastifyRequest} request
+ * @param {import('fastify').FastifyReply} reply
+ */
+async function updateDeliveryStatus (fastify, request, reply) {
+  const { id } = request.params
+  const { status: nextStatus } = request.body
+  const { Delivery } = fastify.models
+
+  const delivery = await Delivery.findByPk(id)
+  if (!delivery) {
+    return reply.notFound(`Delivery ${id} not found`)
+  }
+
+  const currentStatus = delivery.status
+  if (!isValidStatusTransition(currentStatus, nextStatus)) {
+    return reply.conflict(`Cannot transition delivery from ${currentStatus} to ${nextStatus}`)
+  }
+
+  delivery.status = nextStatus
+  await delivery.save()
+
+  return serializeDelivery(delivery)
+}
+
 module.exports = {
   listDeliveries,
   createDelivery,
+  updateDeliveryStatus,
   generateUniqueTrackingNumber,
-  serializeDelivery
+  serializeDelivery,
+  isValidStatusTransition,
+  VALID_STATUS_TRANSITIONS
 }

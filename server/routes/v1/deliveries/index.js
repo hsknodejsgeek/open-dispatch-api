@@ -4,9 +4,11 @@ const {
   listDeliveriesQuerySchema,
   listDeliveriesResponseSchema,
   createDeliveryBodySchema,
+  deliveryIdParamsSchema,
+  updateDeliveryStatusBodySchema,
   deliverySchema
 } = require('../../../src/modules/deliveries/schema')
-const { listDeliveries, createDelivery } = require('../../../src/modules/deliveries/controller')
+const { listDeliveries, createDelivery, updateDeliveryStatus } = require('../../../src/modules/deliveries/controller')
 
 module.exports = async function (fastify, opts) {
   fastify.get('/', {
@@ -26,4 +28,14 @@ module.exports = async function (fastify, opts) {
       }
     }
   }, async (request, reply) => createDelivery(fastify, request, reply))
+
+  fastify.patch('/:id/status', {
+    schema: {
+      params: deliveryIdParamsSchema,
+      body: updateDeliveryStatusBodySchema,
+      response: {
+        200: deliverySchema
+      }
+    }
+  }, async (request, reply) => updateDeliveryStatus(fastify, request, reply))
 }

@@ -37,11 +37,21 @@ const createDeliveryBodySchema = Type.Object({
   priority: Type.Optional(Type.Enum(Object.fromEntries(PRIORITY_VALUES.map((v) => [v, v]))))
 })
 
+const deliveryIdParamsSchema = Type.Object({
+  id: Type.String()
+})
+
+const updateDeliveryStatusBodySchema = Type.Object({
+  status: Type.Enum(Object.fromEntries(STATUS_VALUES.map((v) => [v, v])))
+})
+
 module.exports = {
   STATUS_VALUES,
   PRIORITY_VALUES,
   deliverySchema,
   listDeliveriesQuerySchema,
   listDeliveriesResponseSchema,
-  createDeliveryBodySchema
+  createDeliveryBodySchema,
+  deliveryIdParamsSchema,
+  updateDeliveryStatusBodySchema
 }

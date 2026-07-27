@@ -6,17 +6,25 @@ const assert = require('node:assert')
 const {
   listDeliveries,
   createDelivery,
-  generateUniqueTrackingNumber
+  updateDeliveryStatus,
+  generateUniqueTrackingNumber,
+  isValidStatusTransition
 } = require('../../src/modules/deliveries/controller')
 
 function buildFakeReply () {
   const headers = {}
   let statusCode = 200
+  let notFoundCalledWith = null
+  let conflictCalledWith = null
   return {
     header (name, value) { headers[name] = value; return this },
     code (c) { statusCode = c; return this },
+    notFound (message) { notFoundCalledWith = message; return { statusCode: 404, message } },
+    conflict (message) { conflictCalledWith = message; return { statusCode: 409, message } },
     get headers () { return headers },
-    get statusCode () { return statusCode }
+    get statusCode () { return statusCode },
+    get notFoundCalledWith () { return notFoundCalledWith },
+    get conflictCalledWith () { return conflictCalledWith }
   }
 }
 
@@ -134,4 +142,78 @@ test('generateUniqueTrackingNumber returns first non-colliding candidate', async
   const Delivery = { findOne: async () => null }
   const trackingNumber = await generateUniqueTrackingNumber(Delivery)
   assert.match(trackingNumber, /^TRK-\d{4}$/)
+})
+
+test('isValidStatusTransition allows PENDING -> IN_TRANSIT and PENDING -> CANCELLED', () => {
+  assert.equal(isValidStatusTransition('PENDING', 'IN_TRANSIT'), true)
+  assert.equal(isValidStatusTransition('PENDING', 'CANCELLED'), true)
+})
+
+test('isValidStatusTransition allows IN_TRANSIT -> DELIVERED and IN_TRANSIT -> CANCELLED', () => {
+  assert.equal(isValidStatusTransition('IN_TRANSIT', 'DELIVERED'), true)
+  assert.equal(isValidStatusTransition('IN_TRANSIT', 'CANCELLED'), true)
+})
+
+test('isValidStatusTransition rejects terminal states moving anywhere', () => {
+  assert.equal(isValidStatusTransition('DELIVERED', 'PENDING'), false)
+  assert.equal(isValidStatusTransition('DELIVERED', 'IN_TRANSIT'), false)
+  assert.equal(isValidStatusTransition('CANCELLED', 'PENDING'), false)
+})
+
+test('isValidStatusTransition rejects skipping ahead (PENDING -> DELIVERED) and same-state no-ops', () => {
+  assert.equal(isValidStatusTransition('PENDING', 'DELIVERED'), false)
+  assert.equal(isValidStatusTransition('PENDING', 'PENDING'), false)
+})
+
+function buildFakeDeliveryInstance (attrs) {
+  const record = { ...attrs }
+  return {
+    get status () { return record.status },
+    set status (v) { record.status = v },
+    get id () { return record.id },
+    get () { return { ...record } },
+    save: async () => { record.updatedAt = new Date('2026-02-01') }
+  }
+}
+
+test('updateDeliveryStatus transitions a valid change and persists it', async () => {
+  const instance = buildFakeDeliveryInstance({
+    id: 'd-1', trackingNumber: 'TRK-1111', pickupAddress: 'A', deliveryAddress: 'B',
+    status: 'PENDING', priority: 'LOW', driverId: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01')
+  })
+  const fastify = { models: { Delivery: { findByPk: async () => instance } } }
+  const reply = buildFakeReply()
+  const request = { params: { id: 'd-1' }, body: { status: 'IN_TRANSIT' } }
+
+  const result = await updateDeliveryStatus(fastify, request, reply)
+
+  assert.equal(result.status, 'IN_TRANSIT')
+  assert.equal(instance.status, 'IN_TRANSIT')
+})
+
+test('updateDeliveryStatus returns 404 when the delivery does not exist', async () => {
+  const fastify = { models: { Delivery: { findByPk: async () => null } } }
+  const reply = buildFakeReply()
+  const request = { params: { id: 'missing' }, body: { status: 'IN_TRANSIT' } }
+
+  const result = await updateDeliveryStatus(fastify, request, reply)
+
+  assert.equal(result.statusCode, 404)
+  assert.match(reply.notFoundCalledWith, /missing/)
+})
+
+test('updateDeliveryStatus returns 409 for an invalid transition', async () => {
+  const instance = buildFakeDeliveryInstance({
+    id: 'd-2', trackingNumber: 'TRK-2222', pickupAddress: 'A', deliveryAddress: 'B',
+    status: 'DELIVERED', priority: 'LOW', driverId: null, createdAt: new Date(), updatedAt: new Date()
+  })
+  const fastify = { models: { Delivery: { findByPk: async () => instance } } }
+  const reply = buildFakeReply()
+  const request = { params: { id: 'd-2' }, body: { status: 'PENDING' } }
+
+  const result = await updateDeliveryStatus(fastify, request, reply)
+
+  assert.equal(result.statusCode, 409)
+  assert.match(reply.conflictCalledWith, /Cannot transition delivery from DELIVERED to PENDING/)
+  assert.equal(instance.status, 'DELIVERED') // unchanged
 })
