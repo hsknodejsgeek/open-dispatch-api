@@ -35,6 +35,14 @@ const envSchema = {
     JWT_SECRET: {
       type: 'string',
       default: 'dev-secret-change-me'
+    },
+    REFRESH_TOKEN_SECRET: {
+      type: 'string',
+      default: 'dev-refresh-secret-change-me'
+    },
+    CORS_ORIGIN: {
+      type: 'string',
+      default: 'http://localhost:3000'
     }
   }
 }

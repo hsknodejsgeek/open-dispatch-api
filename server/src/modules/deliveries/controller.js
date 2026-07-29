@@ -57,17 +57,20 @@ function serializeDelivery (delivery) {
 }
 
 /**
- * GET /v1/deliveries — paginated list, optionally filtered by status.
- * Sets an `X-Total-Count` response header with the total (unfiltered by
- * pagination) matching row count.
+ * GET /v1/deliveries — paginated list, optionally filtered by status
+ * and/or driverId (the mobile driver app uses driverId to fetch only its
+ * own assigned jobs). Sets an `X-Total-Count` response header with the
+ * total (unfiltered by pagination) matching row count.
  *
  * @param {import('fastify').FastifyInstance} fastify
  * @param {import('fastify').FastifyRequest} request
  * @param {import('fastify').FastifyReply} reply
  */
 async function listDeliveries (fastify, request, reply) {
-  const { status, page = 1, limit = 20 } = request.query
-  const where = status ? { status } : {}
+  const { status, driverId, page = 1, limit = 20 } = request.query
+  const where = {}
+  if (status) where.status = status
+  if (driverId) where.driverId = driverId
 
   const { rows, count } = await fastify.models.Delivery.findAndCountAll({
     where,
@@ -84,6 +87,25 @@ async function listDeliveries (fastify, request, reply) {
     page,
     limit
   }
+}
+
+/**
+ * GET /v1/deliveries/:id — a single delivery by id. Returns 404 if it
+ * doesn't exist.
+ *
+ * @param {import('fastify').FastifyInstance} fastify
+ * @param {import('fastify').FastifyRequest} request
+ * @param {import('fastify').FastifyReply} reply
+ */
+async function getDeliveryById (fastify, request, reply) {
+  const { id } = request.params
+
+  const delivery = await fastify.models.Delivery.findByPk(id)
+  if (!delivery) {
+    return reply.notFound(`Delivery ${id} not found`)
+  }
+
+  return serializeDelivery(delivery)
 }
 
 /**
@@ -146,6 +168,7 @@ async function updateDeliveryStatus (fastify, request, reply) {
 
 module.exports = {
   listDeliveries,
+  getDeliveryById,
   createDelivery,
   updateDeliveryStatus,
   generateUniqueTrackingNumber,

@@ -178,8 +178,15 @@ function buildFakeDeliveryInstance (attrs) {
 
 test('updateDeliveryStatus transitions a valid change and persists it', async () => {
   const instance = buildFakeDeliveryInstance({
-    id: 'd-1', trackingNumber: 'TRK-1111', pickupAddress: 'A', deliveryAddress: 'B',
-    status: 'PENDING', priority: 'LOW', driverId: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01')
+    id: 'd-1',
+    trackingNumber: 'TRK-1111',
+    pickupAddress: 'A',
+    deliveryAddress: 'B',
+    status: 'PENDING',
+    priority: 'LOW',
+    driverId: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01')
   })
   const fastify = { models: { Delivery: { findByPk: async () => instance } } }
   const reply = buildFakeReply()
@@ -204,8 +211,15 @@ test('updateDeliveryStatus returns 404 when the delivery does not exist', async 
 
 test('updateDeliveryStatus returns 409 for an invalid transition', async () => {
   const instance = buildFakeDeliveryInstance({
-    id: 'd-2', trackingNumber: 'TRK-2222', pickupAddress: 'A', deliveryAddress: 'B',
-    status: 'DELIVERED', priority: 'LOW', driverId: null, createdAt: new Date(), updatedAt: new Date()
+    id: 'd-2',
+    trackingNumber: 'TRK-2222',
+    pickupAddress: 'A',
+    deliveryAddress: 'B',
+    status: 'DELIVERED',
+    priority: 'LOW',
+    driverId: null,
+    createdAt: new Date(),
+    updatedAt: new Date()
   })
   const fastify = { models: { Delivery: { findByPk: async () => instance } } }
   const reply = buildFakeReply()

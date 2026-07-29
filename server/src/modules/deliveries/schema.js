@@ -19,6 +19,9 @@ const deliverySchema = Type.Object({
 
 const listDeliveriesQuerySchema = Type.Object({
   status: Type.Optional(Type.Enum(Object.fromEntries(STATUS_VALUES.map((v) => [v, v])))),
+  // Lets the mobile driver app fetch only its own assigned jobs
+  // (GET /v1/deliveries?driverId=...).
+  driverId: Type.Optional(Type.String()),
   page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 20 }))
 })

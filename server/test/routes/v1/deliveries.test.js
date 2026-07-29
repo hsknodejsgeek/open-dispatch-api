@@ -44,14 +44,22 @@ function buildStatefulDeliveryInstance (overrides = {}) {
   }
 }
 
-async function buildApp (t, { rows = [], count = 0, findOneResult = null, onCreate, findByPkResult } = {}) {
+async function buildApp (t, { rows = [], count = 0, findOneResult = null, onCreate, onFindAndCountAll, findByPkResult } = {}) {
   const fastify = Fastify()
 
   fastify.register(sensible, { errorHandler: false })
 
+  // All /v1/deliveries routes use preHandler: [fastify.authenticate]; the
+  // real behavior is covered by the jwt plugin, this is just a stub so the
+  // route registration doesn't blow up in isolation.
+  fastify.decorate('authenticate', async () => {})
+
   fastify.decorate('models', {
     Delivery: {
-      findAndCountAll: async () => ({ rows, count }),
+      findAndCountAll: async (opts) => {
+        if (onFindAndCountAll) onFindAndCountAll(opts)
+        return { rows, count }
+      },
       findOne: async () => findOneResult,
       findByPk: async () => (findByPkResult === undefined ? null : findByPkResult),
       create: async (attrs) => {
@@ -101,6 +109,54 @@ test('GET /v1/deliveries returns 400 for invalid status enum value', async (t) =
   const res = await app.inject({ method: 'GET', url: '/v1/deliveries?status=NOT_A_STATUS' })
 
   assert.equal(res.statusCode, 400)
+})
+
+test('GET /v1/deliveries filters by driverId when provided', async (t) => {
+  let capturedWhere = null
+  const app = await buildApp(t, {
+    rows: [],
+    count: 0,
+    onFindAndCountAll: (opts) => { capturedWhere = opts.where }
+  })
+
+  const res = await app.inject({ method: 'GET', url: '/v1/deliveries?driverId=driver-1' })
+
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(capturedWhere, { driverId: 'driver-1' })
+})
+
+test('GET /v1/deliveries combines status and driverId filters', async (t) => {
+  let capturedWhere = null
+  const app = await buildApp(t, {
+    rows: [],
+    count: 0,
+    onFindAndCountAll: (opts) => { capturedWhere = opts.where }
+  })
+
+  const res = await app.inject({ method: 'GET', url: '/v1/deliveries?status=PENDING&driverId=driver-1' })
+
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(capturedWhere, { status: 'PENDING', driverId: 'driver-1' })
+})
+
+test('GET /v1/deliveries/:id returns the matching delivery', async (t) => {
+  const record = buildDeliveryRecord({ id: 'd-1', trackingNumber: 'TRK-9999' })
+  const app = await buildApp(t, { findByPkResult: record })
+
+  const res = await app.inject({ method: 'GET', url: '/v1/deliveries/d-1' })
+
+  assert.equal(res.statusCode, 200)
+  const body = res.json()
+  assert.equal(body.id, 'd-1')
+  assert.equal(body.trackingNumber, 'TRK-9999')
+})
+
+test('GET /v1/deliveries/:id returns 404 when the delivery does not exist', async (t) => {
+  const app = await buildApp(t, { findByPkResult: null })
+
+  const res = await app.inject({ method: 'GET', url: '/v1/deliveries/missing' })
+
+  assert.equal(res.statusCode, 404)
 })
 
 test('POST /v1/deliveries creates a delivery with generated tracking number, returns 201', async (t) => {
