@@ -18,7 +18,7 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  name_prefix = "logipulse-${var.environment}"
+  name_prefix = "opendispatch-${var.environment}"
   azs         = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 

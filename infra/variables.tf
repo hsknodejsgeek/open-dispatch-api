@@ -18,7 +18,7 @@ variable "environment" {
 variable "db_name" {
   description = "Name of the application Postgres database."
   type        = string
-  default     = "logipulse_db"
+  default     = "opendispatch_db"
 }
 
 variable "container_port" {

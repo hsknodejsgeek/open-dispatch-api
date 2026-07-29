@@ -1,4 +1,4 @@
-# LogiPulse — High-Throughput Fastify & Postgres Fleet API
+# opendispatch — High-Throughput Fastify & Postgres Fleet API
 
 A high-throughput fleet dispatch API for tracking drivers and deliveries in real time. Built as a portfolio demo: Fastify backend, Postgres via Sequelize, JWT auth, live GPS telemetry over WebSockets, and OpenTofu-provisioned AWS infrastructure.
 
@@ -29,7 +29,7 @@ ALB (public subnets)  →  Fastify on ECS Fargate (private subnets)  →  Postgr
 ## Repo layout
 
 ```
-logipulse/
+opendispatch/
 ├── server/    # Fastify backend (see server/README.md)
 ├── infra/     # OpenTofu IaC (AWS VPC, ECS Fargate, RDS, ALB)
 └── docs/      # Architecture notes and implementation plan

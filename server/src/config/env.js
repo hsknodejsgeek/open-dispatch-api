@@ -22,7 +22,7 @@ const envSchema = {
     },
     DB_NAME: {
       type: 'string',
-      default: 'logipulse_db'
+      default: 'opendispatch_db'
     },
     DB_USER: {
       type: 'string',

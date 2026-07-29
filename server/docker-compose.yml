@@ -3,16 +3,16 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: logipulse-postgres
+    container_name: opendispatch-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-logipulse_db}
+      POSTGRES_DB: ${DB_NAME:-opendispatch_db}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
       - '${DB_PORT:-5432}:5432'
     volumes:
-      - logipulse_postgres_data:/var/lib/postgresql/data
+      - opendispatch_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-postgres}']
       interval: 5s
@@ -20,4 +20,4 @@ services:
       retries: 5
 
 volumes:
-  logipulse_postgres_data:
+  opendispatch_postgres_data:
