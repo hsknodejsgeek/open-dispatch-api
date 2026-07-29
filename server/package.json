@@ -9,17 +9,36 @@
   "scripts": {
     "test": "node --test test/**/*.test.js",
     "start": "fastify start -l info app.js",
-    "dev": "fastify start -w -l info -P app.js"
+    "dev": "fastify start -w -l info -P app.js",
+    "migrate": "node scripts/migrate.js",
+    "seed:mobile-driver": "node scripts/seed-mobile-driver.js",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "fastify": "^5.0.0",
-    "fastify-plugin": "^5.0.0",
     "@fastify/autoload": "^6.0.0",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/env": "^5.0.0",
+    "@fastify/jwt": "^10.2.1",
     "@fastify/sensible": "^6.0.0",
-    "fastify-cli": "^8.0.0"
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@fastify/websocket": "^11.3.0",
+    "@sinclair/typebox": "^0.34.52",
+    "ajv": "^8.20.0",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.0.0",
+    "fastify-cli": "^8.0.0",
+    "fastify-plugin": "^5.0.0",
+    "pg": "^8.12.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "neostandard": "^0.13.0"
+  }
 }
