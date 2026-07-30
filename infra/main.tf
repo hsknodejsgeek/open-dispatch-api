@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -17,13 +25,28 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# Amazon Linux 2023 AMI (has docker/nginx in repos, ships with cloud-init)
+data "aws_ami" "al2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
 locals {
   name_prefix = "opendispatch-${var.environment}"
-  azs         = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
 # ---------------------------------------------------------------------------
-# Networking: VPC, 2 public + 2 private subnets, IGW, NAT, route tables
+# Networking: default VPC's default subnet (single public instance, no NAT/ALB/RDS)
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "main" {
@@ -47,51 +70,15 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_subnet" "public" {
-  count                   = length(var.public_subnet_cidrs)
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidrs[count.index]
-  availability_zone       = local.azs[count.index]
+  cidr_block              = var.public_subnet_cidr
+  availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "${local.name_prefix}-public-${count.index}"
-    Environment = var.environment
-    Tier        = "public"
-  }
-}
-
-resource "aws_subnet" "private" {
-  count             = length(var.private_subnet_cidrs)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_cidrs[count.index]
-  availability_zone = local.azs[count.index]
-
-  tags = {
-    Name        = "${local.name_prefix}-private-${count.index}"
-    Environment = var.environment
-    Tier        = "private"
-  }
-}
-
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = {
-    Name        = "${local.name_prefix}-nat-eip"
+    Name        = "${local.name_prefix}-public"
     Environment = var.environment
   }
-}
-
-resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
-
-  tags = {
-    Name        = "${local.name_prefix}-nat"
-    Environment = var.environment
-  }
-
-  depends_on = [aws_internet_gateway.main]
 }
 
 resource "aws_route_table" "public" {
@@ -109,42 +96,30 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
-  subnet_id      = aws_subnet.public[count.index].id
+  subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
 }
 
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
-  }
-
-  tags = {
-    Name        = "${local.name_prefix}-private-rt"
-    Environment = var.environment
-  }
-}
-
-resource "aws_route_table_association" "private" {
-  count          = length(aws_subnet.private)
-  subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
-}
-
 # ---------------------------------------------------------------------------
-# Security groups
+# Security group: SSH (22) + HTTP (80) only. 3000/3001 stay internal,
+# reached only via nginx on the box.
 # ---------------------------------------------------------------------------
 
-resource "aws_security_group" "alb" {
-  name        = "${local.name_prefix}-alb-sg"
-  description = "Allow inbound HTTP from the internet to the ALB."
+resource "aws_security_group" "app" {
+  name        = "${local.name_prefix}-app-sg"
+  description = "SSH + HTTP only; app ports 3000/3001 are proxied internally via nginx."
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTP from anywhere"
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.ssh_allowed_cidr]
+  }
+
+  ingress {
+    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -159,285 +134,71 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name        = "${local.name_prefix}-alb-sg"
-    Environment = var.environment
-  }
-}
-
-resource "aws_security_group" "ecs" {
-  name        = "${local.name_prefix}-ecs-sg"
-  description = "Allow inbound traffic from the ALB to ECS tasks on the container port."
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description     = "App traffic from ALB"
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "${local.name_prefix}-ecs-sg"
-    Environment = var.environment
-  }
-}
-
-resource "aws_security_group" "rds" {
-  name        = "${local.name_prefix}-rds-sg"
-  description = "Allow inbound Postgres traffic from ECS tasks only."
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description     = "Postgres from ECS tasks"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "${local.name_prefix}-rds-sg"
+    Name        = "${local.name_prefix}-app-sg"
     Environment = var.environment
   }
 }
 
 # ---------------------------------------------------------------------------
-# RDS Postgres (private subnets)
+# SSH key pair (generated by OpenTofu; private key written locally, not
+# committed — see .gitignore)
 # ---------------------------------------------------------------------------
 
-resource "aws_db_subnet_group" "main" {
-  name       = "${local.name_prefix}-db-subnet-group"
-  subnet_ids = aws_subnet.private[*].id
-
-  tags = {
-    Name        = "${local.name_prefix}-db-subnet-group"
-    Environment = var.environment
-  }
+resource "tls_private_key" "ssh" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
 }
 
-resource "aws_db_instance" "main" {
-  identifier     = "${local.name_prefix}-postgres"
-  engine         = "postgres"
-  engine_version = "16"
-  instance_class = var.db_instance_class
+resource "aws_key_pair" "app" {
+  key_name   = "${local.name_prefix}-key"
+  public_key = tls_private_key.ssh.public_key_openssh
+}
 
-  allocated_storage     = 20
-  max_allocated_storage = 100
-  storage_type          = "gp3"
-
-  db_name  = var.db_name
-  username = var.db_username
-  password = var.db_password
-  port     = 5432
-
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false
-
-  multi_az                = false
-  backup_retention_period = 7
-  skip_final_snapshot     = true
-  deletion_protection     = false
-
-  tags = {
-    Name        = "${local.name_prefix}-postgres"
-    Environment = var.environment
-  }
+resource "local_sensitive_file" "private_key" {
+  content         = tls_private_key.ssh.private_key_pem
+  filename        = "${path.module}/${local.name_prefix}-key.pem"
+  file_permission = "0600"
 }
 
 # ---------------------------------------------------------------------------
-# ECS Fargate cluster + task definition + service
+# EC2 instance: Docker + Postgres (docker) + nginx reverse proxy
+# App containers (web:3000, api:3001) are deployed separately by CI/CD.
 # ---------------------------------------------------------------------------
 
-resource "aws_ecs_cluster" "main" {
-  name = "${local.name_prefix}-cluster"
+resource "aws_instance" "app" {
+  ami                         = data.aws_ami.al2023.id
+  instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.app.id]
+  key_name                    = aws_key_pair.app.key_name
+  associate_public_ip_address = true
 
-  setting {
-    name  = "containerInsights"
-    value = "disabled"
+  root_block_device {
+    volume_size = var.root_volume_size
+    volume_type = "gp3"
   }
 
-  tags = {
-    Name        = "${local.name_prefix}-cluster"
-    Environment = var.environment
-  }
-}
-
-resource "aws_cloudwatch_log_group" "app" {
-  name              = "/ecs/${local.name_prefix}-app"
-  retention_in_days = 14
-
-  tags = {
-    Name        = "${local.name_prefix}-app-logs"
-    Environment = var.environment
-  }
-}
-
-resource "aws_iam_role" "ecs_task_execution" {
-  name = "${local.name_prefix}-ecs-task-execution-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
+  user_data = templatefile("${path.module}/scripts/bootstrap.sh.tpl", {
+    db_name     = var.db_name
+    db_username = var.db_username
+    db_password = var.db_password
+    db_port     = var.db_port
+    web_port    = var.web_port
+    api_port    = var.api_port
   })
 
   tags = {
-    Name        = "${local.name_prefix}-ecs-task-execution-role"
+    Name        = "${local.name_prefix}-instance"
     Environment = var.environment
   }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
-  role       = aws_iam_role.ecs_task_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-resource "aws_ecs_task_definition" "app" {
-  family                   = "${local.name_prefix}-app"
-  requires_compatibilities = ["FARGATE"]
-  network_mode             = "awsvpc"
-  cpu                      = var.task_cpu
-  memory                   = var.task_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-
-  container_definitions = jsonencode([
-    {
-      name      = "app"
-      image     = var.container_image
-      essential = true
-
-      portMappings = [
-        {
-          containerPort = var.container_port
-          protocol      = "tcp"
-        }
-      ]
-
-      environment = [
-        { name = "NODE_ENV", value = var.environment == "production" ? "production" : "development" },
-        { name = "PORT", value = tostring(var.container_port) },
-        { name = "DB_HOST", value = aws_db_instance.main.address },
-        { name = "DB_PORT", value = tostring(aws_db_instance.main.port) },
-        { name = "DB_NAME", value = var.db_name },
-        { name = "DB_USER", value = var.db_username },
-        { name = "DB_PASSWORD", value = var.db_password },
-        { name = "JWT_SECRET", value = var.jwt_secret }
-      ]
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.app.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "app"
-        }
-      }
-    }
-  ])
+resource "aws_eip" "app" {
+  instance = aws_instance.app.id
+  domain   = "vpc"
 
   tags = {
-    Name        = "${local.name_prefix}-app-task"
+    Name        = "${local.name_prefix}-eip"
     Environment = var.environment
-  }
-}
-
-resource "aws_ecs_service" "app" {
-  name            = "${local.name_prefix}-app-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = aws_subnet.private[*].id
-    security_groups  = [aws_security_group.ecs.id]
-    assign_public_ip = false
-  }
-
-  load_balancer {
-    target_group_arn = aws_lb_target_group.app.arn
-    container_name   = "app"
-    container_port   = var.container_port
-  }
-
-  depends_on = [aws_lb_listener.http]
-
-  tags = {
-    Name        = "${local.name_prefix}-app-service"
-    Environment = var.environment
-  }
-}
-
-# ---------------------------------------------------------------------------
-# Application Load Balancer (public subnets, routes to ECS on container_port)
-# ---------------------------------------------------------------------------
-
-resource "aws_lb" "app" {
-  name               = "${local.name_prefix}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
-
-  tags = {
-    Name        = "${local.name_prefix}-alb"
-    Environment = var.environment
-  }
-}
-
-resource "aws_lb_target_group" "app" {
-  name        = "${local.name_prefix}-tg"
-  port        = var.container_port
-  protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
-  target_type = "ip"
-
-  health_check {
-    path                = "/"
-    protocol            = "HTTP"
-    matcher             = "200-399"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-  }
-
-  tags = {
-    Name        = "${local.name_prefix}-tg"
-    Environment = var.environment
-  }
-}
-
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.app.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
   }
 }
