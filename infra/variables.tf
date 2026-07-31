@@ -15,82 +15,69 @@ variable "environment" {
   }
 }
 
-variable "db_name" {
-  description = "Name of the application Postgres database."
-  type        = string
-  default     = "opendispatch_db"
-}
-
-variable "container_port" {
-  description = "Port the Fastify container listens on and the ALB forwards traffic to."
-  type        = number
-  default     = 3000
-}
-
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
   default     = "10.0.0.0/16"
 }
 
-variable "public_subnet_cidrs" {
-  description = "CIDR blocks for the 2 public subnets (ALB)."
-  type        = list(string)
-  default     = ["10.0.0.0/24", "10.0.1.0/24"]
-}
-
-variable "private_subnet_cidrs" {
-  description = "CIDR blocks for the 2 private subnets (ECS + RDS)."
-  type        = list(string)
-  default     = ["10.0.10.0/24", "10.0.11.0/24"]
-}
-
-variable "db_instance_class" {
-  description = "RDS instance class for the Postgres database."
+variable "public_subnet_cidr" {
+  description = "CIDR block for the single public subnet hosting the instance."
   type        = string
-  default     = "db.t4g.micro"
+  default     = "10.0.0.0/24"
+}
+
+variable "ssh_allowed_cidr" {
+  description = "CIDR allowed to SSH into the instance. Lock this down to your IP (e.g. \"1.2.3.4/32\"), not left at 0.0.0.0/0."
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+variable "instance_type" {
+  description = "EC2 instance type."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "root_volume_size" {
+  description = "Root EBS volume size in GB."
+  type        = number
+  default     = 30
+}
+
+variable "db_name" {
+  description = "Postgres database name."
+  type        = string
+  default     = "opendispatch_db"
 }
 
 variable "db_username" {
-  description = "Master username for the RDS Postgres instance."
+  description = "Postgres username."
   type        = string
   default     = "postgres"
 }
 
 variable "db_password" {
-  description = "Master password for the RDS Postgres instance. Override via TF_VAR_db_password or a tfvars file; never commit a real value."
+  description = "Postgres password. Override via TF_VAR_db_password or a tfvars file; never commit a real value."
   type        = string
   default     = "changeme-in-tfvars"
   sensitive   = true
 }
 
-variable "container_image" {
-  description = "Container image (repository:tag) for the Fastify app task."
-  type        = string
-  default     = "public.ecr.aws/docker/library/node:20-alpine"
-}
-
-variable "task_cpu" {
-  description = "Fargate task CPU units."
+variable "db_port" {
+  description = "Host port Postgres is published on (container's 5432 mapped to this)."
   type        = number
-  default     = 256
+  default     = 5432
 }
 
-variable "task_memory" {
-  description = "Fargate task memory (MiB)."
+variable "web_port" {
+  description = "Port the web/frontend app listens on (nginx proxies /web/* here)."
   type        = number
-  default     = 512
+  default     = 3000
 }
 
-variable "desired_count" {
-  description = "Desired number of running ECS tasks."
+variable "api_port" {
+  description = "Port the API/server app listens on (nginx proxies /api/* here)."
   type        = number
-  default     = 1
-}
-
-variable "jwt_secret" {
-  description = "Secret used to sign JWTs. Override via TF_VAR_jwt_secret or a tfvars file; never commit a real value."
-  type        = string
-  default     = "changeme-in-tfvars"
-  sensitive   = true
+  default     = 3001
 }

@@ -31,11 +31,8 @@ ALB (public subnets)  →  Fastify on ECS Fargate (private subnets)  →  Postgr
 ```
 opendispatch/
 ├── server/    # Fastify backend (see server/README.md)
-├── infra/     # OpenTofu IaC (AWS VPC, ECS Fargate, RDS, ALB)
-└── docs/      # Architecture notes and implementation plan
+└── infra/     # OpenTofu IaC (AWS VPC, ECS Fargate, RDS, ALB)
 ```
-
-See `docs/intro.md` for the full spec and `docs/implementation-plan.md` for the phased build plan.
 
 ## Quick start
 
@@ -74,8 +71,4 @@ tofu plan
 tofu apply
 ```
 
-See `infra/README.md` and `docs/implementation-plan.md` (Phase 8) for the resources this provisions.
-
-## Status
-
-All phases in `docs/implementation-plan.md` (0 through 9) are implemented. Tag `v1.0.0` marks this completed portfolio demo.
+See `infra/README.md` for the resources this provisions.
